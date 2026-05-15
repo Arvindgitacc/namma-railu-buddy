@@ -1,0 +1,29 @@
+plugins {
+    id "com.android.application"
+}
+
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+}
+
+android {
+    namespace "com.mindmatrix.nammarailubuddy"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.mindmatrix.nammarailubuddy"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+dependencies {
+    implementation platform("com.google.firebase:firebase-bom:33.7.0")
+    implementation "com.google.firebase:firebase-auth"
+    implementation "com.google.firebase:firebase-firestore"
+    implementation "com.google.android.gms:play-services-location:21.3.0"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.core:core:1.13.1"
+}

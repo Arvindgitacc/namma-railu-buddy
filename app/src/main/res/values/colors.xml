@@ -1,0 +1,6 @@
+<resources>
+    <color name="rail_green">#0B6B43</color>
+    <color name="signal_yellow">#FFD447</color>
+    <color name="ink">#101820</color>
+    <color name="paper">#F7F8F3</color>
+</resources>

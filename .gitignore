@@ -1,0 +1,23 @@
+# Gradle and Android build output
+.gradle/
+build/
+app/build/
+
+# Local machine configuration
+local.properties
+.tools/
+
+# Firebase project secrets/config generated per project
+app/google-services.json
+
+# IDE/editor files
+.idea/
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Generated tool traces
+.github/java-upgrade/
