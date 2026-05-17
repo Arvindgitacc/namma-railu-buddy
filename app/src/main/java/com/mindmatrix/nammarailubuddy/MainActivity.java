@@ -6,6 +6,8 @@ import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -36,6 +38,7 @@ import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.SetOptions;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -48,14 +51,51 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_BACKGROUND_LOCATION = 33;
     private static final float DESTINATION_RADIUS_METERS = 5000f;
 
+    private static final int INK = 0xFF101820;
+    private static final int RAIL_GREEN = 0xFF0B6B43;
+    private static final int SIGNAL_YELLOW = 0xFFFFD447;
+    private static final int PAPER = 0xFFF7F8F3;
+    private static final int MUTED = 0xFF5E646A;
+    private static final int BORDER = 0xFFE1E5DD;
+
     private final List<Station> stations = Arrays.asList(
-            new Station("mandya", "Mandya", "Mysuru Passenger 06233", "2", "Front: coaches 1-3", "Middle: coach 6", 5, 12.5222, 76.9009),
-            new Station("birur", "Birur", "Shivamogga Passenger 06545", "1", "Rear: coaches 10-12", "Middle: coach 5", 0, 13.5972, 75.9717),
-            new Station("maddur", "Maddur", "Bengaluru Local 06582", "3", "Front: coaches 1-2", "Middle: coach 7", 12, 12.5839, 77.0435),
-            new Station("ramanagara", "Ramanagara", "KSR Bengaluru MEMU 06276", "4", "Rear: coaches 9-12", "Middle: coach 6", 3, 12.7219, 77.2810),
-            new Station("channapatna", "Channapatna", "Kengeri MEMU 06522", "2", "Front: coaches 1-4", "Middle: coach 8", 8, 12.6514, 77.2067),
-            new Station("mysuru", "Mysuru Junction", "Bengaluru Passenger 06269", "5", "Rear: coaches 8-11", "Middle: coach 4", 0, 12.3169, 76.6461),
-            new Station("bengaluru", "KSR Bengaluru", "Mandya Passenger 06270", "7", "Front: coaches 1-3", "Middle: coach 9", 15, 12.9784, 77.5697)
+            new Station("mandya", "Mandya", 12.5222, 76.9009),
+            new Station("maddur", "Maddur", 12.5839, 77.0435),
+            new Station("channapatna", "Channapatna", 12.6514, 77.2067),
+            new Station("ramanagara", "Ramanagara", 12.7219, 77.2810),
+            new Station("bengaluru", "KSR Bengaluru", 12.9784, 77.5697),
+            new Station("mysuru", "Mysuru Junction", 12.3169, 76.6461),
+            new Station("birur", "Birur", 13.5972, 75.9717)
+    );
+
+    private final List<TrainService> trains = Arrays.asList(
+            new TrainService("mysuru-passenger-06233", "06233", "Mysuru Passenger", "KSR Bengaluru", "Mysuru Junction", Arrays.asList(
+                    new StopInfo("bengaluru", "7", "06:20", "Rear: coaches 9-12", "Middle: coach 6", 0),
+                    new StopInfo("ramanagara", "4", "07:18", "Rear: coaches 9-12", "Middle: coach 6", 3),
+                    new StopInfo("channapatna", "2", "07:36", "Front: coaches 1-4", "Middle: coach 8", 4),
+                    new StopInfo("maddur", "3", "08:02", "Front: coaches 1-2", "Middle: coach 7", 8),
+                    new StopInfo("mandya", "2", "08:28", "Front: coaches 1-3", "Middle: coach 6", 5),
+                    new StopInfo("mysuru", "5", "09:35", "Rear: coaches 8-11", "Middle: coach 4", 0)
+            )),
+            new TrainService("bengaluru-memu-06276", "06276", "Bengaluru MEMU", "Mysuru Junction", "KSR Bengaluru", Arrays.asList(
+                    new StopInfo("mysuru", "4", "17:10", "Front: coaches 1-3", "Middle: coach 5", 0),
+                    new StopInfo("mandya", "1", "18:03", "Rear: coaches 8-11", "Middle: coach 6", 6),
+                    new StopInfo("maddur", "2", "18:28", "Rear: coaches 8-10", "Middle: coach 5", 10),
+                    new StopInfo("channapatna", "1", "18:49", "Front: coaches 1-4", "Middle: coach 7", 7),
+                    new StopInfo("ramanagara", "3", "19:08", "Front: coaches 1-2", "Middle: coach 6", 3),
+                    new StopInfo("bengaluru", "6", "20:05", "Rear: coaches 9-12", "Middle: coach 8", 0)
+            )),
+            new TrainService("shivamogga-passenger-06545", "06545", "Shivamogga Passenger", "Birur", "KSR Bengaluru", Arrays.asList(
+                    new StopInfo("birur", "1", "05:55", "Rear: coaches 10-12", "Middle: coach 5", 0),
+                    new StopInfo("bengaluru", "8", "10:45", "Front: coaches 1-3", "Middle: coach 7", 12)
+            )),
+            new TrainService("mandya-passenger-06270", "06270", "Mandya Passenger", "KSR Bengaluru", "Mandya", Arrays.asList(
+                    new StopInfo("bengaluru", "5", "18:35", "Front: coaches 1-3", "Middle: coach 9", 15),
+                    new StopInfo("ramanagara", "2", "19:22", "Rear: coaches 9-12", "Middle: coach 6", 8),
+                    new StopInfo("channapatna", "3", "19:40", "Rear: coaches 8-10", "Middle: coach 5", 6),
+                    new StopInfo("maddur", "1", "20:04", "Front: coaches 1-2", "Middle: coach 7", 3),
+                    new StopInfo("mandya", "2", "20:31", "Front: coaches 1-4", "Middle: coach 6", 0)
+            ))
     );
 
     private FirebaseAuth auth;
@@ -63,10 +103,15 @@ public class MainActivity extends AppCompatActivity {
     private GeofencingClient geofencingClient;
     private Station selectedStation;
     private Station selectedDestination;
+    private TrainService selectedTrain;
+    private StopInfo selectedStop;
     private ListenerRegistration platformListener;
     private ListenerRegistration delayListener;
 
+    private Spinner trainSpinner;
+    private TextView routeText;
     private TextView platformText;
+    private TextView arrivalText;
     private TextView coachText;
     private TextView crowdText;
     private TextView delayText;
@@ -80,7 +125,9 @@ public class MainActivity extends AppCompatActivity {
         geofencingClient = LocationServices.getGeofencingClient(this);
 
         selectedStation = stations.get(0);
-        selectedDestination = stations.get(stations.size() - 1);
+        selectedDestination = findStation("bengaluru");
+        selectedTrain = trainsForStation(selectedStation).get(0);
+        selectedStop = selectedTrain.stopFor(selectedStation.id);
 
         signIn();
         requestNotificationPermission();
@@ -100,31 +147,29 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private View buildContent() {
-        int ink = Color.rgb(16, 24, 32);
-        int railGreen = Color.rgb(11, 107, 67);
-        int signalYellow = Color.rgb(255, 212, 71);
-        int paper = Color.rgb(247, 248, 243);
-
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
-        scrollView.setBackgroundColor(paper);
+        scrollView.setBackgroundColor(PAPER);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(28));
+        root.setPadding(dp(16), dp(16), dp(16), dp(28));
         scrollView.addView(root);
 
-        TextView title = text("Namma Railu Buddy", 30, Color.WHITE, true);
+        LinearLayout header = panel(RAIL_GREEN, RAIL_GREEN, 0);
+        header.setGravity(Gravity.CENTER);
+        header.setPadding(dp(18), dp(18), dp(18), dp(18));
+        TextView title = text("Namma Railu Buddy", 29, Color.WHITE, true);
         title.setGravity(Gravity.CENTER);
-        title.setBackgroundColor(railGreen);
-        title.setPadding(dp(16), dp(18), dp(16), dp(18));
-        root.addView(title, matchWrap());
+        header.addView(title, matchWrap());
+        root.addView(header, matchWrap());
 
-        TextView subtitle = text("Passenger guide for local trains", 16, ink, false);
-        subtitle.setPadding(0, dp(12), 0, dp(16));
+        TextView subtitle = text("Local train guide for platforms, coaches and alerts", 15, MUTED, false);
+        subtitle.setPadding(0, dp(12), 0, dp(12));
         root.addView(subtitle);
 
-        root.addView(label("Current station"));
+        LinearLayout journeyPanel = sectionPanel(root, "Plan your journey");
+        journeyPanel.addView(label("Current station"));
         Spinner stationSpinner = spinner(stations);
         stationSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -137,28 +182,51 @@ public class MainActivity extends AppCompatActivity {
             public void onNothingSelected(AdapterView<?> parent) {
             }
         });
-        root.addView(stationSpinner);
+        journeyPanel.addView(stationSpinner);
 
-        platformText = section(root, "Platform");
-        coachText = section(root, "Coach position");
-        crowdText = section(root, "Passenger confirmations");
-        delayText = section(root, "Delay updates");
+        journeyPanel.addView(label("Select train"));
+        trainSpinner = spinner(new ArrayList<>(trainsForStation(selectedStation)));
+        trainSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                selectedTrain = (TrainService) parent.getItemAtPosition(position);
+                bindTrain(selectedTrain);
+            }
 
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+        journeyPanel.addView(trainSpinner);
+
+        routeText = infoLine(journeyPanel, "");
+
+        LinearLayout board = sectionPanel(root, "Live station board");
+        platformText = cardText(board, "", 21, true);
+        arrivalText = cardText(board, "", 18, true);
+        coachText = cardText(board, "", 18, true);
+        crowdText = cardText(board, "", 17, false);
+        delayText = cardText(board, "", 17, false);
+
+        LinearLayout updates = sectionPanel(root, "Community updates");
+        updates.addView(label("Platform Ping"));
         platformInput = input("Platform number");
-        root.addView(platformInput);
-        Button pingButton = button("Confirm / Update platform", signalYellow, ink);
+        updates.addView(platformInput);
+        Button pingButton = button("Confirm / Update platform", SIGNAL_YELLOW, INK);
         pingButton.setOnClickListener(v -> submitPlatformPing());
-        root.addView(pingButton);
+        updates.addView(pingButton);
 
+        updates.addView(label("Delay report"));
         delayInput = input("Delay in minutes");
-        root.addView(delayInput);
-        Button delayButton = button("Share delay update", railGreen, Color.WHITE);
+        updates.addView(delayInput);
+        Button delayButton = button("Share delay update", RAIL_GREEN, Color.WHITE);
         delayButton.setOnClickListener(v -> submitDelayUpdate());
-        root.addView(delayButton);
+        updates.addView(delayButton);
 
-        root.addView(label("Destination alarm"));
+        LinearLayout alarm = sectionPanel(root, "Destination alarm");
+        alarm.addView(label("Wake me near"));
         Spinner destinationSpinner = spinner(stations);
-        destinationSpinner.setSelection(stations.size() - 1);
+        destinationSpinner.setSelection(stations.indexOf(selectedDestination));
         destinationSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -169,30 +237,55 @@ public class MainActivity extends AppCompatActivity {
             public void onNothingSelected(AdapterView<?> parent) {
             }
         });
-        root.addView(destinationSpinner);
+        alarm.addView(destinationSpinner);
 
-        Button alarmButton = button("Set 5 km destination alarm", railGreen, Color.WHITE);
+        Button alarmButton = button("Set 5 km destination alarm", RAIL_GREEN, Color.WHITE);
         alarmButton.setOnClickListener(v -> setDestinationAlarm());
-        root.addView(alarmButton);
+        alarm.addView(alarmButton);
 
         return scrollView;
     }
 
     private void bindStation(Station station) {
+        if (trainSpinner == null) {
+            return;
+        }
+
+        List<TrainService> stationTrains = trainsForStation(station);
+        if (!stationTrains.contains(selectedTrain)) {
+            selectedTrain = stationTrains.get(0);
+        }
+
+        ArrayAdapter<TrainService> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, stationTrains);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        trainSpinner.setAdapter(adapter);
+        trainSpinner.setSelection(stationTrains.indexOf(selectedTrain));
+        bindTrain(selectedTrain);
+    }
+
+    private void bindTrain(TrainService train) {
         if (platformText == null) {
             return;
         }
 
-        platformText.setText("Platform " + station.platform + " for " + station.train);
-        coachText.setText("General: " + station.generalCoach + "\nLadies: " + station.ladiesCoach);
-        delayText.setText(defaultDelayText(station.delayMinutes));
-        platformInput.setText(station.platform);
-        delayInput.setText(String.valueOf(station.delayMinutes));
-        listenForPlatformPings(station);
-        listenForDelayUpdates(station);
+        selectedStop = train.stopFor(selectedStation.id);
+        if (selectedStop == null) {
+            selectedStop = train.stops.get(0);
+        }
+
+        routeText.setText(train.origin + " to " + train.destination);
+        platformText.setText("Platform " + selectedStop.platform);
+        arrivalText.setText("Expected at " + selectedStop.arrival + " for " + train.number + " " + train.name);
+        coachText.setText("General: " + selectedStop.generalCoach + "\nLadies: " + selectedStop.ladiesCoach);
+        crowdText.setText("No live confirmations yet. Be the first to ping.");
+        delayText.setText(defaultDelayText(selectedStop.delayMinutes));
+        platformInput.setText(selectedStop.platform);
+        delayInput.setText(String.valueOf(selectedStop.delayMinutes));
+        listenForPlatformPings();
+        listenForDelayUpdates();
     }
 
-    private void listenForPlatformPings(Station station) {
+    private void listenForPlatformPings() {
         if (platformListener != null) {
             platformListener.remove();
         }
@@ -200,7 +293,7 @@ public class MainActivity extends AppCompatActivity {
             crowdText.setText("Firebase is not configured yet. Add google-services.json to enable live pings.");
             return;
         }
-        platformListener = platformDoc(station).addSnapshotListener((snapshot, error) -> {
+        platformListener = platformDoc().addSnapshotListener((snapshot, error) -> {
             if (error != null || snapshot == null || !snapshot.exists()) {
                 crowdText.setText("No live confirmations yet. Be the first to ping.");
                 return;
@@ -209,33 +302,33 @@ public class MainActivity extends AppCompatActivity {
             String platform = snapshot.getString("platform");
             Long confirmations = snapshot.getLong("confirmations");
             if (platform == null) {
-                platform = station.platform;
+                platform = selectedStop.platform;
             }
             long count = confirmations == null ? 0 : confirmations;
             crowdText.setText(String.format(Locale.getDefault(),
                     "Platform %s confirmed by %d passengers.", platform, count));
-            platformText.setText("Platform " + platform + " for " + station.train);
+            platformText.setText("Platform " + platform);
         });
     }
 
-    private void listenForDelayUpdates(Station station) {
+    private void listenForDelayUpdates() {
         if (delayListener != null) {
             delayListener.remove();
         }
         if (db == null) {
-            delayText.setText(defaultDelayText(station.delayMinutes));
+            delayText.setText(defaultDelayText(selectedStop.delayMinutes));
             return;
         }
-        delayListener = delayDoc(station).addSnapshotListener((snapshot, error) -> {
+        delayListener = delayDoc().addSnapshotListener((snapshot, error) -> {
             if (error != null || snapshot == null || !snapshot.exists()) {
-                delayText.setText(defaultDelayText(station.delayMinutes));
+                delayText.setText(defaultDelayText(selectedStop.delayMinutes));
                 return;
             }
 
             Long minutes = snapshot.getLong("minutes");
             Long reports = snapshot.getLong("reports");
             if (minutes == null) {
-                delayText.setText(defaultDelayText(station.delayMinutes));
+                delayText.setText(defaultDelayText(selectedStop.delayMinutes));
                 return;
             }
             long count = reports == null ? 1 : reports;
@@ -255,13 +348,14 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        DocumentReference ref = platformDoc(selectedStation);
+        DocumentReference ref = platformDoc();
         db.runTransaction(transaction -> {
             Long current = transaction.get(ref).getLong("confirmations");
             long next = current == null ? 1 : current + 1;
             Map<String, Object> data = new HashMap<>();
             data.put("platform", platform);
             data.put("confirmations", next);
+            data.put("train", selectedTrain.number);
             data.put("updatedAt", FieldValue.serverTimestamp());
             transaction.set(ref, data, SetOptions.merge());
             return null;
@@ -288,13 +382,14 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        DocumentReference ref = delayDoc(selectedStation);
+        DocumentReference ref = delayDoc();
         db.runTransaction(transaction -> {
             Long reports = transaction.get(ref).getLong("reports");
             long next = reports == null ? 1 : reports + 1;
             Map<String, Object> data = new HashMap<>();
             data.put("minutes", minutes);
             data.put("reports", next);
+            data.put("train", selectedTrain.number);
             data.put("updatedAt", FieldValue.serverTimestamp());
             transaction.set(ref, data, SetOptions.merge());
             return null;
@@ -388,32 +483,79 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private DocumentReference platformDoc(Station station) {
-        return db.collection("stations").document(station.id)
-                .collection("platformPings").document(station.train.replace(" ", "_").toLowerCase(Locale.US));
+    private DocumentReference platformDoc() {
+        return db.collection("stations").document(selectedStation.id)
+                .collection("platformPings").document(selectedTrain.id);
     }
 
-    private DocumentReference delayDoc(Station station) {
-        return db.collection("stations").document(station.id)
-                .collection("delayUpdates").document(station.train.replace(" ", "_").toLowerCase(Locale.US));
+    private DocumentReference delayDoc() {
+        return db.collection("stations").document(selectedStation.id)
+                .collection("delayUpdates").document(selectedTrain.id);
+    }
+
+    private List<TrainService> trainsForStation(Station station) {
+        List<TrainService> result = new ArrayList<>();
+        for (TrainService train : trains) {
+            if (train.stopFor(station.id) != null) {
+                result.add(train);
+            }
+        }
+        return result;
+    }
+
+    private Station findStation(String id) {
+        for (Station station : stations) {
+            if (station.id.equals(id)) {
+                return station;
+            }
+        }
+        return stations.get(0);
     }
 
     private String defaultDelayText(int minutes) {
         return minutes == 0 ? "No delay reported." : "Expected delay: " + minutes + " min.";
     }
 
-    private TextView section(LinearLayout root, String title) {
-        root.addView(label(title));
-        TextView value = text("", 18, Color.rgb(16, 24, 32), true);
-        value.setBackgroundColor(Color.WHITE);
-        value.setPadding(dp(14), dp(12), dp(14), dp(12));
-        root.addView(value, matchWrap());
-        return value;
+    private LinearLayout sectionPanel(LinearLayout root, String title) {
+        TextView heading = text(title, 19, RAIL_GREEN, true);
+        heading.setPadding(0, dp(18), 0, dp(8));
+        root.addView(heading);
+
+        LinearLayout panel = panel(Color.WHITE, BORDER, 1);
+        panel.setPadding(dp(14), dp(12), dp(14), dp(14));
+        root.addView(panel, matchWrap());
+        return panel;
+    }
+
+    private LinearLayout panel(int fillColor, int strokeColor, int strokeWidth) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackground(box(fillColor, strokeColor, strokeWidth, 8));
+        return panel;
+    }
+
+    private TextView cardText(LinearLayout root, String value, int sp, boolean bold) {
+        TextView text = text(value, sp, INK, bold);
+        text.setBackground(box(PAPER, BORDER, 1, 6));
+        text.setPadding(dp(12), dp(10), dp(12), dp(10));
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(8);
+        root.addView(text, params);
+        return text;
+    }
+
+    private TextView infoLine(LinearLayout root, String value) {
+        TextView text = text(value, 16, MUTED, false);
+        text.setPadding(0, dp(8), 0, 0);
+        root.addView(text, matchWrap());
+        return text;
     }
 
     private TextView label(String value) {
-        TextView label = text(value, 14, Color.rgb(11, 107, 67), true);
-        label.setPadding(0, dp(18), 0, dp(6));
+        TextView label = text(value, 13, RAIL_GREEN, true);
+        label.setAllCaps(true);
+        label.setLetterSpacing(0.08f);
+        label.setPadding(0, dp(10), 0, dp(5));
         return label;
     }
 
@@ -423,26 +565,26 @@ public class MainActivity extends AppCompatActivity {
         text.setTextSize(sp);
         text.setTextColor(color);
         if (bold) {
-            text.setTypeface(text.getTypeface(), android.graphics.Typeface.BOLD);
+            text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         }
-        text.setLineSpacing(4f, 1f);
+        text.setLineSpacing(3f, 1f);
         return text;
     }
 
     private EditText input(String hint) {
         EditText input = new EditText(this);
         input.setHint(hint);
-        input.setTextColor(Color.rgb(16, 24, 32));
-        input.setHintTextColor(Color.rgb(94, 100, 106));
+        input.setTextColor(INK);
+        input.setHintTextColor(MUTED);
         input.setTextSize(18);
         input.setSingleLine(true);
-        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        input.setPadding(dp(12), dp(8), dp(12), dp(8));
         return input;
     }
 
-    private Spinner spinner(List<Station> values) {
+    private <T> Spinner spinner(List<T> values) {
         Spinner spinner = new Spinner(this);
-        ArrayAdapter<Station> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, values);
+        ArrayAdapter<T> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, values);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinner.setAdapter(adapter);
         spinner.setPadding(0, dp(4), 0, dp(4));
@@ -454,13 +596,23 @@ public class MainActivity extends AppCompatActivity {
         button.setText(value);
         button.setTextSize(16);
         button.setTextColor(textColor);
-        button.setBackgroundColor(background);
         button.setAllCaps(false);
+        button.setBackground(box(background, background, 0, 6));
         button.setPadding(dp(12), dp(12), dp(12), dp(12));
         LinearLayout.LayoutParams params = matchWrap();
         params.topMargin = dp(10);
         button.setLayoutParams(params);
         return button;
+    }
+
+    private GradientDrawable box(int fillColor, int strokeColor, int strokeWidth, int radiusDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fillColor);
+        drawable.setCornerRadius(dp(radiusDp));
+        if (strokeWidth > 0) {
+            drawable.setStroke(dp(strokeWidth), strokeColor);
+        }
+        return drawable;
     }
 
     private LinearLayout.LayoutParams matchWrap() {

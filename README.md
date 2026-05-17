@@ -5,6 +5,7 @@ Namma Railu Buddy is an Android passenger guide for local train commuters. It he
 ## Requirement Coverage
 
 - Live station selection with sample Karnataka stations such as Mandya and Birur.
+- Train selection for each station, with sample local passenger/MEMU services.
 - Coach-position display for General and Ladies coaches.
 - Platform Ping backed by Firestore confirmation counts.
 - Crowdsourced delay updates backed by Firestore.
