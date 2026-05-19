@@ -33,6 +33,7 @@ import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -100,6 +101,7 @@ public class MainActivity extends AppCompatActivity {
     );
 
     private FirebaseAuth auth;
+    private FirebaseAuth.AuthStateListener authStateListener;
     private FirebaseFirestore db;
     private GeofencingClient geofencingClient;
     private Station selectedStation;
@@ -118,6 +120,15 @@ public class MainActivity extends AppCompatActivity {
     private TextView coachText;
     private TextView crowdText;
     private TextView delayText;
+    private TextView authStatusText;
+    private TextView emailLabel;
+    private TextView passwordLabel;
+    private EditText emailInput;
+    private EditText passwordInput;
+    private Button signInButton;
+    private Button createAccountButton;
+    private Button guestButton;
+    private Button signOutButton;
     private EditText platformInput;
     private EditText delayInput;
     private long localPlatformConfirmations;
@@ -134,9 +145,10 @@ public class MainActivity extends AppCompatActivity {
         selectedTrain = trainsForStation(selectedStation).get(0);
         selectedStop = selectedTrain.stopFor(selectedStation.id);
 
-        signIn();
         requestNotificationPermission();
         setContentView(buildContent());
+        bindAuthState(auth == null ? null : auth.getCurrentUser());
+        listenForAuthChanges();
         bindStation(selectedStation);
     }
 
@@ -148,6 +160,9 @@ public class MainActivity extends AppCompatActivity {
         }
         if (delayListener != null) {
             delayListener.remove();
+        }
+        if (auth != null && authStateListener != null) {
+            auth.removeAuthStateListener(authStateListener);
         }
     }
 
@@ -172,6 +187,31 @@ public class MainActivity extends AppCompatActivity {
         TextView subtitle = text("Passenger guide for local trains", 16, INK, false);
         subtitle.setPadding(0, dp(12), 0, dp(12));
         root.addView(subtitle);
+
+        LinearLayout accountPanel = sectionPanel(root, "Passenger account");
+        authStatusText = cardText(accountPanel, "", 16, false);
+        emailLabel = label("Email");
+        accountPanel.addView(emailLabel);
+        emailInput = input("Email address");
+        emailInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        accountPanel.addView(emailInput);
+        passwordLabel = label("Password");
+        accountPanel.addView(passwordLabel);
+        passwordInput = input("Password");
+        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        accountPanel.addView(passwordInput);
+        signInButton = button("Sign in", RAIL_GREEN, Color.WHITE);
+        signInButton.setOnClickListener(v -> submitSignIn());
+        accountPanel.addView(signInButton);
+        createAccountButton = button("Create account", SIGNAL_YELLOW, INK);
+        createAccountButton.setOnClickListener(v -> createAccount());
+        accountPanel.addView(createAccountButton);
+        guestButton = button("Continue as guest", Color.WHITE, RAIL_GREEN);
+        guestButton.setOnClickListener(v -> continueAsGuest());
+        accountPanel.addView(guestButton);
+        signOutButton = button("Sign out", SIGNAL_YELLOW, INK);
+        signOutButton.setOnClickListener(v -> signOut());
+        accountPanel.addView(signOutButton);
 
         LinearLayout journeyPanel = sectionPanel(root, "Plan your journey");
         journeyPanel.addView(label("Current station"));
@@ -312,6 +352,10 @@ public class MainActivity extends AppCompatActivity {
             crowdText.setText("No live confirmations yet. Your update will be saved on this device.");
             return;
         }
+        if (!isSignedIn()) {
+            crowdText.setText("Sign in or continue as guest to share platform confirmations.");
+            return;
+        }
         platformListener = platformDoc().addSnapshotListener((snapshot, error) -> {
             if (error != null || snapshot == null || !snapshot.exists()) {
                 crowdText.setText("No live confirmations yet. Be the first to ping.");
@@ -336,6 +380,10 @@ public class MainActivity extends AppCompatActivity {
         }
         if (db == null) {
             delayText.setText(defaultDelayText(selectedStop.delayMinutes));
+            return;
+        }
+        if (!isSignedIn()) {
+            delayText.setText("Sign in or continue as guest to share delay updates.");
             return;
         }
         delayListener = delayDoc().addSnapshotListener((snapshot, error) -> {
@@ -369,6 +417,10 @@ public class MainActivity extends AppCompatActivity {
                     "Platform %s confirmed by %d passengers on this device.", platform, localPlatformConfirmations));
             platformText.setText("Platform " + platform + " for " + selectedTrain.name + " " + selectedTrain.number);
             toast("Platform update saved on this device.");
+            return;
+        }
+        if (!isSignedIn()) {
+            toast("Sign in or continue as guest to share platform updates.");
             return;
         }
 
@@ -407,6 +459,10 @@ public class MainActivity extends AppCompatActivity {
             delayText.setText(String.format(Locale.getDefault(),
                     "Current delay: %d min, reported by %d passengers on this device.", minutes, localDelayReports));
             toast("Delay update saved on this device.");
+            return;
+        }
+        if (!isSignedIn()) {
+            toast("Sign in or continue as guest to share delay updates.");
             return;
         }
 
@@ -469,15 +525,112 @@ public class MainActivity extends AppCompatActivity {
                         .addOnFailureListener(e -> toast("Could not set alarm. Check location settings.")));
     }
 
-    private void signIn() {
+    private void submitSignIn() {
         if (auth == null) {
+            toast("Firebase Authentication is not configured.");
             return;
         }
-        if (auth.getCurrentUser() != null) {
+        String email = emailInput.getText().toString().trim();
+        String password = passwordInput.getText().toString();
+        if (!hasCredentials(email, password)) {
+            return;
+        }
+        auth.signInWithEmailAndPassword(email, password)
+                .addOnSuccessListener(unused -> toast("Signed in."))
+                .addOnFailureListener(e -> toast("Sign in failed. Check email, password and Firebase settings."));
+    }
+
+    private void createAccount() {
+        if (auth == null) {
+            toast("Firebase Authentication is not configured.");
+            return;
+        }
+        String email = emailInput.getText().toString().trim();
+        String password = passwordInput.getText().toString();
+        if (!hasCredentials(email, password)) {
+            return;
+        }
+        auth.createUserWithEmailAndPassword(email, password)
+                .addOnSuccessListener(unused -> toast("Account created."))
+                .addOnFailureListener(e -> toast("Could not create account. Enable Email/Password auth in Firebase."));
+    }
+
+    private void continueAsGuest() {
+        if (auth == null) {
+            toast("Firebase Authentication is not configured.");
             return;
         }
         auth.signInAnonymously()
-                .addOnFailureListener(e -> toast("Firebase login failed. Add google-services.json and enable Anonymous Auth."));
+                .addOnSuccessListener(unused -> toast("Continuing as guest."))
+                .addOnFailureListener(e -> toast("Guest sign-in failed. Enable Anonymous auth in Firebase."));
+    }
+
+    private void signOut() {
+        if (auth != null) {
+            auth.signOut();
+            toast("Signed out.");
+        }
+    }
+
+    private void listenForAuthChanges() {
+        if (auth == null) {
+            return;
+        }
+        authStateListener = firebaseAuth -> bindAuthState(firebaseAuth.getCurrentUser());
+        auth.addAuthStateListener(authStateListener);
+    }
+
+    private void bindAuthState(FirebaseUser user) {
+        if (authStatusText == null) {
+            return;
+        }
+
+        boolean configured = auth != null;
+        boolean signedIn = configured && user != null;
+        if (!configured) {
+            authStatusText.setText("Firebase config is missing. Account sign-in is unavailable.");
+        } else if (signedIn) {
+            String display = user.isAnonymous() ? "Guest passenger" : user.getEmail();
+            authStatusText.setText("Signed in as " + display + ".");
+        } else {
+            authStatusText.setText("Sign in or continue as guest to share updates across devices.");
+        }
+
+        int signedOutVisibility = signedIn ? View.GONE : View.VISIBLE;
+        int signedInVisibility = signedIn ? View.VISIBLE : View.GONE;
+        emailLabel.setVisibility(signedOutVisibility);
+        passwordLabel.setVisibility(signedOutVisibility);
+        emailInput.setVisibility(signedOutVisibility);
+        passwordInput.setVisibility(signedOutVisibility);
+        signInButton.setVisibility(signedOutVisibility);
+        createAccountButton.setVisibility(signedOutVisibility);
+        guestButton.setVisibility(signedOutVisibility);
+        signOutButton.setVisibility(signedInVisibility);
+
+        boolean enabled = configured;
+        emailInput.setEnabled(enabled);
+        passwordInput.setEnabled(enabled);
+        signInButton.setEnabled(enabled);
+        createAccountButton.setEnabled(enabled);
+        guestButton.setEnabled(enabled);
+        listenForPlatformPings();
+        listenForDelayUpdates();
+    }
+
+    private boolean hasCredentials(String email, String password) {
+        if (email.isEmpty()) {
+            toast("Enter your email address.");
+            return false;
+        }
+        if (password.length() < 6) {
+            toast("Password must be at least 6 characters.");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isSignedIn() {
+        return auth != null && auth.getCurrentUser() != null;
     }
 
     private void configureFirebase() {
