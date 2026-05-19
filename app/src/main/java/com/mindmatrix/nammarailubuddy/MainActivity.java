@@ -27,13 +27,20 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.auth.api.signin.GoogleSignInClient;
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
+import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingClient;
 import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.tasks.Task;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -51,6 +58,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_LOCATION = 31;
     private static final int REQUEST_NOTIFICATIONS = 32;
     private static final int REQUEST_BACKGROUND_LOCATION = 33;
+    private static final int REQUEST_GOOGLE_SIGN_IN = 34;
     private static final float DESTINATION_RADIUS_METERS = 5000f;
 
     private static final int INK = 0xFF101820;
@@ -103,6 +111,7 @@ public class MainActivity extends AppCompatActivity {
     private FirebaseAuth auth;
     private FirebaseAuth.AuthStateListener authStateListener;
     private FirebaseFirestore db;
+    private GoogleSignInClient googleSignInClient;
     private GeofencingClient geofencingClient;
     private Station selectedStation;
     private Station selectedDestination;
@@ -121,12 +130,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView crowdText;
     private TextView delayText;
     private TextView authStatusText;
-    private TextView emailLabel;
-    private TextView passwordLabel;
-    private EditText emailInput;
-    private EditText passwordInput;
-    private Button signInButton;
-    private Button createAccountButton;
+    private Button googleSignInButton;
     private Button guestButton;
     private Button signOutButton;
     private EditText platformInput;
@@ -139,6 +143,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         configureFirebase();
+        configureGoogleSignIn();
         geofencingClient = LocationServices.getGeofencingClient(this);
 
         selectedStation = stations.get(0);
@@ -193,25 +198,9 @@ public class MainActivity extends AppCompatActivity {
         root.addView(accountPanel, matchWrap());
 
         authStatusText = cardText(accountPanel, "", 16, false);
-        emailLabel = label("Email");
-        accountPanel.addView(emailLabel);
-        emailInput = input("Email address");
-        emailInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        accountPanel.addView(emailInput);
-
-        passwordLabel = label("Password");
-        accountPanel.addView(passwordLabel);
-        passwordInput = input("Password");
-        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        accountPanel.addView(passwordInput);
-
-        signInButton = button("Sign in", RAIL_GREEN, Color.WHITE);
-        signInButton.setOnClickListener(v -> submitSignIn());
-        accountPanel.addView(signInButton);
-
-        createAccountButton = button("Create account", SIGNAL_YELLOW, INK);
-        createAccountButton.setOnClickListener(v -> createAccount());
-        accountPanel.addView(createAccountButton);
+        googleSignInButton = button("Continue with Google", RAIL_GREEN, Color.WHITE);
+        googleSignInButton.setOnClickListener(v -> signInWithGoogle());
+        accountPanel.addView(googleSignInButton);
 
         guestButton = button("Continue as guest", Color.WHITE, RAIL_GREEN);
         guestButton.setOnClickListener(v -> continueAsGuest());
@@ -569,34 +558,45 @@ public class MainActivity extends AppCompatActivity {
                         .addOnFailureListener(e -> toast("Could not set alarm. Check location settings.")));
     }
 
-    private void submitSignIn() {
+    private void signInWithGoogle() {
         if (auth == null) {
             toast("Firebase Authentication is not configured.");
             return;
         }
-        String email = emailInput.getText().toString().trim();
-        String password = passwordInput.getText().toString();
-        if (!hasCredentials(email, password)) {
+        if (googleSignInClient == null) {
+            toast("Add SHA-1 in Firebase, re-download google-services.json, then rebuild.");
             return;
         }
-        auth.signInWithEmailAndPassword(email, password)
-                .addOnSuccessListener(unused -> toast("Signed in."))
-                .addOnFailureListener(e -> toast("Sign in failed. Check email, password and Firebase settings."));
+        startActivityForResult(googleSignInClient.getSignInIntent(), REQUEST_GOOGLE_SIGN_IN);
     }
 
-    private void createAccount() {
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_GOOGLE_SIGN_IN) {
+            return;
+        }
+        Task<GoogleSignInAccount> task = GoogleSignIn.getSignedInAccountFromIntent(data);
+        try {
+            GoogleSignInAccount account = task.getResult(ApiException.class);
+            firebaseAuthWithGoogle(account);
+        } catch (ApiException e) {
+            toast("Google sign-in was cancelled or failed.");
+        }
+    }
+
+    private void firebaseAuthWithGoogle(GoogleSignInAccount account) {
         if (auth == null) {
             toast("Firebase Authentication is not configured.");
             return;
         }
-        String email = emailInput.getText().toString().trim();
-        String password = passwordInput.getText().toString();
-        if (!hasCredentials(email, password)) {
+        if (account == null || account.getIdToken() == null) {
+            toast("Google sign-in did not return an ID token.");
             return;
         }
-        auth.createUserWithEmailAndPassword(email, password)
-                .addOnSuccessListener(unused -> toast("Account created."))
-                .addOnFailureListener(e -> toast("Could not create account. Enable Email/Password auth in Firebase."));
+        auth.signInWithCredential(GoogleAuthProvider.getCredential(account.getIdToken(), null))
+                .addOnSuccessListener(unused -> toast("Signed in with Google."))
+                .addOnFailureListener(e -> toast("Firebase Google sign-in failed. Check SHA-1 and Google provider setup."));
     }
 
     private void continueAsGuest() {
@@ -612,6 +612,9 @@ public class MainActivity extends AppCompatActivity {
     private void signOut() {
         if (auth != null) {
             auth.signOut();
+            if (googleSignInClient != null) {
+                googleSignInClient.signOut();
+            }
             toast("Signed out.");
         }
     }
@@ -672,13 +675,10 @@ public class MainActivity extends AppCompatActivity {
         if (!configured) {
             authStatusText.setText("Firebase config is missing. Account sign-in is unavailable.");
         } else {
-            authStatusText.setText("Use your account or continue as guest.");
+            authStatusText.setText("Use Google sign-in or continue as guest.");
         }
 
-        emailInput.setEnabled(configured);
-        passwordInput.setEnabled(configured);
-        signInButton.setEnabled(configured);
-        createAccountButton.setEnabled(configured);
+        googleSignInButton.setEnabled(configured);
         guestButton.setEnabled(configured);
     }
 
@@ -701,20 +701,21 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private boolean hasCredentials(String email, String password) {
-        if (email.isEmpty()) {
-            toast("Enter your email address.");
-            return false;
-        }
-        if (password.length() < 6) {
-            toast("Password must be at least 6 characters.");
-            return false;
-        }
-        return true;
-    }
-
     private boolean isSignedIn() {
         return auth != null && auth.getCurrentUser() != null;
+    }
+
+    private void configureGoogleSignIn() {
+        int webClientId = getResources().getIdentifier("default_web_client_id", "string", getPackageName());
+        if (webClientId == 0) {
+            googleSignInClient = null;
+            return;
+        }
+        GoogleSignInOptions options = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(getString(webClientId))
+                .requestEmail()
+                .build();
+        googleSignInClient = GoogleSignIn.getClient(this, options);
     }
 
     private void configureFirebase() {
