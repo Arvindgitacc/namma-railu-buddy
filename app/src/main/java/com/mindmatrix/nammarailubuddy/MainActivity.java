@@ -10,6 +10,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.AdapterView;
@@ -109,6 +110,8 @@ public class MainActivity extends AppCompatActivity {
     private ListenerRegistration delayListener;
 
     private Spinner trainSpinner;
+    private Spinner destinationSpinner;
+    private TextView trainSummaryText;
     private TextView routeText;
     private TextView platformText;
     private TextView arrivalText;
@@ -117,6 +120,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView delayText;
     private EditText platformInput;
     private EditText delayInput;
+    private long localPlatformConfirmations;
+    private long localDelayReports;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -164,7 +169,7 @@ public class MainActivity extends AppCompatActivity {
         header.addView(title, matchWrap());
         root.addView(header, matchWrap());
 
-        TextView subtitle = text("Local train guide for platforms, coaches and alerts", 15, MUTED, false);
+        TextView subtitle = text("Passenger guide for local trains", 16, INK, false);
         subtitle.setPadding(0, dp(12), 0, dp(12));
         root.addView(subtitle);
 
@@ -199,6 +204,7 @@ public class MainActivity extends AppCompatActivity {
         });
         journeyPanel.addView(trainSpinner);
 
+        trainSummaryText = cardText(journeyPanel, "", 18, true);
         routeText = infoLine(journeyPanel, "");
 
         LinearLayout board = sectionPanel(root, "Live station board");
@@ -209,7 +215,7 @@ public class MainActivity extends AppCompatActivity {
         delayText = cardText(board, "", 17, false);
 
         LinearLayout updates = sectionPanel(root, "Community updates");
-        updates.addView(label("Platform Ping"));
+        updates.addView(label("Platform ping"));
         platformInput = input("Platform number");
         updates.addView(platformInput);
         Button pingButton = button("Confirm / Update platform", SIGNAL_YELLOW, INK);
@@ -218,6 +224,7 @@ public class MainActivity extends AppCompatActivity {
 
         updates.addView(label("Delay report"));
         delayInput = input("Delay in minutes");
+        delayInput.setInputType(InputType.TYPE_CLASS_NUMBER);
         updates.addView(delayInput);
         Button delayButton = button("Share delay update", RAIL_GREEN, Color.WHITE);
         delayButton.setOnClickListener(v -> submitDelayUpdate());
@@ -225,7 +232,7 @@ public class MainActivity extends AppCompatActivity {
 
         LinearLayout alarm = sectionPanel(root, "Destination alarm");
         alarm.addView(label("Wake me near"));
-        Spinner destinationSpinner = spinner(stations);
+        destinationSpinner = spinner(stations);
         destinationSpinner.setSelection(stations.indexOf(selectedDestination));
         destinationSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -273,14 +280,26 @@ public class MainActivity extends AppCompatActivity {
             selectedStop = train.stops.get(0);
         }
 
-        routeText.setText(train.origin + " to " + train.destination);
-        platformText.setText("Platform " + selectedStop.platform);
-        arrivalText.setText("Expected at " + selectedStop.arrival + " for " + train.number + " " + train.name);
+        selectedDestination = destinationFor(train);
+        if (destinationSpinner != null) {
+            int destinationIndex = stations.indexOf(selectedDestination);
+            if (destinationIndex >= 0 && destinationSpinner.getSelectedItemPosition() != destinationIndex) {
+                destinationSpinner.setSelection(destinationIndex);
+            }
+        }
+
+        trainSummaryText.setText(train.number + " " + train.name + "\n" + train.origin + " to " + train.destination);
+        routeText.setText(String.format(Locale.getDefault(),
+                "%s stop: %s passenger guidance is ready.", selectedStation.name, train.number));
+        platformText.setText("Platform " + selectedStop.platform + " for " + train.name + " " + train.number);
+        arrivalText.setText("Expected arrival: " + selectedStop.arrival);
         coachText.setText("General: " + selectedStop.generalCoach + "\nLadies: " + selectedStop.ladiesCoach);
         crowdText.setText("No live confirmations yet. Be the first to ping.");
         delayText.setText(defaultDelayText(selectedStop.delayMinutes));
         platformInput.setText(selectedStop.platform);
         delayInput.setText(String.valueOf(selectedStop.delayMinutes));
+        localPlatformConfirmations = 0;
+        localDelayReports = 0;
         listenForPlatformPings();
         listenForDelayUpdates();
     }
@@ -290,7 +309,7 @@ public class MainActivity extends AppCompatActivity {
             platformListener.remove();
         }
         if (db == null) {
-            crowdText.setText("Firebase is not configured yet. Add google-services.json to enable live pings.");
+            crowdText.setText("No live confirmations yet. Your update will be saved on this device.");
             return;
         }
         platformListener = platformDoc().addSnapshotListener((snapshot, error) -> {
@@ -307,7 +326,7 @@ public class MainActivity extends AppCompatActivity {
             long count = confirmations == null ? 0 : confirmations;
             crowdText.setText(String.format(Locale.getDefault(),
                     "Platform %s confirmed by %d passengers.", platform, count));
-            platformText.setText("Platform " + platform);
+            platformText.setText("Platform " + platform + " for " + selectedTrain.name + " " + selectedTrain.number);
         });
     }
 
@@ -338,13 +357,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void submitPlatformPing() {
-        if (db == null) {
-            toast("Add google-services.json to enable platform pings.");
-            return;
-        }
         String platform = platformInput.getText().toString().trim();
         if (platform.isEmpty()) {
             toast("Enter a platform number.");
+            return;
+        }
+
+        if (db == null) {
+            localPlatformConfirmations++;
+            crowdText.setText(String.format(Locale.getDefault(),
+                    "Platform %s confirmed by %d passengers on this device.", platform, localPlatformConfirmations));
+            platformText.setText("Platform " + platform + " for " + selectedTrain.name + " " + selectedTrain.number);
+            toast("Platform update saved on this device.");
             return;
         }
 
@@ -364,10 +388,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void submitDelayUpdate() {
-        if (db == null) {
-            toast("Add google-services.json to enable delay updates.");
-            return;
-        }
         String rawDelay = delayInput.getText().toString().trim();
         if (rawDelay.isEmpty()) {
             toast("Enter delay minutes.");
@@ -379,6 +399,14 @@ public class MainActivity extends AppCompatActivity {
             minutes = Integer.parseInt(rawDelay);
         } catch (NumberFormatException ignored) {
             toast("Use a valid number of minutes.");
+            return;
+        }
+
+        if (db == null) {
+            localDelayReports++;
+            delayText.setText(String.format(Locale.getDefault(),
+                    "Current delay: %d min, reported by %d passengers on this device.", minutes, localDelayReports));
+            toast("Delay update saved on this device.");
             return;
         }
 
@@ -501,6 +529,15 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return result;
+    }
+
+    private Station destinationFor(TrainService train) {
+        for (Station station : stations) {
+            if (station.name.equals(train.destination)) {
+                return station;
+            }
+        }
+        return selectedDestination == null ? stations.get(0) : selectedDestination;
     }
 
     private Station findStation(String id) {
