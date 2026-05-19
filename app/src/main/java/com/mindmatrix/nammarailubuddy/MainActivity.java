@@ -133,6 +133,7 @@ public class MainActivity extends AppCompatActivity {
     private EditText delayInput;
     private long localPlatformConfirmations;
     private long localDelayReports;
+    private boolean showingApp;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -146,10 +147,8 @@ public class MainActivity extends AppCompatActivity {
         selectedStop = selectedTrain.stopFor(selectedStation.id);
 
         requestNotificationPermission();
-        setContentView(buildContent());
-        bindAuthState(auth == null ? null : auth.getCurrentUser());
         listenForAuthChanges();
-        bindStation(selectedStation);
+        showScreenForAuth(auth == null ? null : auth.getCurrentUser());
     }
 
     @Override
@@ -164,6 +163,61 @@ public class MainActivity extends AppCompatActivity {
         if (auth != null && authStateListener != null) {
             auth.removeAuthStateListener(authStateListener);
         }
+    }
+
+    private View buildAuthContent() {
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setFillViewport(true);
+        scrollView.setBackgroundColor(PAPER);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER_VERTICAL);
+        root.setPadding(dp(20), dp(28), dp(20), dp(28));
+        scrollView.addView(root);
+
+        LinearLayout header = panel(RAIL_GREEN, RAIL_GREEN, 0);
+        header.setGravity(Gravity.CENTER);
+        header.setPadding(dp(18), dp(22), dp(18), dp(22));
+        TextView title = text("Namma Railu Buddy", 29, Color.WHITE, true);
+        title.setGravity(Gravity.CENTER);
+        header.addView(title, matchWrap());
+        root.addView(header, matchWrap());
+
+        TextView subtitle = text("Sign in to share platform and delay updates with passengers.", 16, INK, false);
+        subtitle.setPadding(0, dp(14), 0, dp(12));
+        root.addView(subtitle);
+
+        LinearLayout accountPanel = panel(Color.WHITE, BORDER, 1);
+        accountPanel.setPadding(dp(14), dp(12), dp(14), dp(14));
+        root.addView(accountPanel, matchWrap());
+
+        authStatusText = cardText(accountPanel, "", 16, false);
+        emailLabel = label("Email");
+        accountPanel.addView(emailLabel);
+        emailInput = input("Email address");
+        emailInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        accountPanel.addView(emailInput);
+
+        passwordLabel = label("Password");
+        accountPanel.addView(passwordLabel);
+        passwordInput = input("Password");
+        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        accountPanel.addView(passwordInput);
+
+        signInButton = button("Sign in", RAIL_GREEN, Color.WHITE);
+        signInButton.setOnClickListener(v -> submitSignIn());
+        accountPanel.addView(signInButton);
+
+        createAccountButton = button("Create account", SIGNAL_YELLOW, INK);
+        createAccountButton.setOnClickListener(v -> createAccount());
+        accountPanel.addView(createAccountButton);
+
+        guestButton = button("Continue as guest", Color.WHITE, RAIL_GREEN);
+        guestButton.setOnClickListener(v -> continueAsGuest());
+        accountPanel.addView(guestButton);
+
+        return scrollView;
     }
 
     private View buildContent() {
@@ -188,27 +242,11 @@ public class MainActivity extends AppCompatActivity {
         subtitle.setPadding(0, dp(12), 0, dp(12));
         root.addView(subtitle);
 
-        LinearLayout accountPanel = sectionPanel(root, "Passenger account");
-        authStatusText = cardText(accountPanel, "", 16, false);
-        emailLabel = label("Email");
-        accountPanel.addView(emailLabel);
-        emailInput = input("Email address");
-        emailInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-        accountPanel.addView(emailInput);
-        passwordLabel = label("Password");
-        accountPanel.addView(passwordLabel);
-        passwordInput = input("Password");
-        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        accountPanel.addView(passwordInput);
-        signInButton = button("Sign in", RAIL_GREEN, Color.WHITE);
-        signInButton.setOnClickListener(v -> submitSignIn());
-        accountPanel.addView(signInButton);
-        createAccountButton = button("Create account", SIGNAL_YELLOW, INK);
-        createAccountButton.setOnClickListener(v -> createAccount());
-        accountPanel.addView(createAccountButton);
-        guestButton = button("Continue as guest", Color.WHITE, RAIL_GREEN);
-        guestButton.setOnClickListener(v -> continueAsGuest());
-        accountPanel.addView(guestButton);
+        LinearLayout accountPanel = panel(Color.WHITE, BORDER, 1);
+        accountPanel.setPadding(dp(14), dp(12), dp(14), dp(14));
+        root.addView(accountPanel, matchWrap());
+        authStatusText = text("", 16, INK, false);
+        accountPanel.addView(authStatusText, matchWrap());
         signOutButton = button("Sign out", SIGNAL_YELLOW, INK);
         signOutButton.setOnClickListener(v -> signOut());
         accountPanel.addView(signOutButton);
@@ -348,6 +386,9 @@ public class MainActivity extends AppCompatActivity {
         if (platformListener != null) {
             platformListener.remove();
         }
+        if (crowdText == null) {
+            return;
+        }
         if (db == null) {
             crowdText.setText("No live confirmations yet. Your update will be saved on this device.");
             return;
@@ -377,6 +418,9 @@ public class MainActivity extends AppCompatActivity {
     private void listenForDelayUpdates() {
         if (delayListener != null) {
             delayListener.remove();
+        }
+        if (delayText == null) {
+            return;
         }
         if (db == null) {
             delayText.setText(defaultDelayText(selectedStop.delayMinutes));
@@ -576,45 +620,85 @@ public class MainActivity extends AppCompatActivity {
         if (auth == null) {
             return;
         }
-        authStateListener = firebaseAuth -> bindAuthState(firebaseAuth.getCurrentUser());
+        authStateListener = firebaseAuth -> showScreenForAuth(firebaseAuth.getCurrentUser());
         auth.addAuthStateListener(authStateListener);
     }
 
-    private void bindAuthState(FirebaseUser user) {
+    private void showScreenForAuth(FirebaseUser user) {
+        boolean signedIn = auth != null && user != null;
+        if (signedIn) {
+            showAppScreen(user);
+        } else {
+            showAuthScreen();
+        }
+    }
+
+    private void showAuthScreen() {
+        showingApp = false;
+        clearLiveListeners();
+        trainSpinner = null;
+        destinationSpinner = null;
+        trainSummaryText = null;
+        routeText = null;
+        platformText = null;
+        arrivalText = null;
+        coachText = null;
+        crowdText = null;
+        delayText = null;
+        platformInput = null;
+        delayInput = null;
+        setContentView(buildAuthContent());
+        bindAuthScreen();
+    }
+
+    private void showAppScreen(FirebaseUser user) {
+        if (showingApp && platformText != null) {
+            bindSignedInStatus(user);
+            listenForPlatformPings();
+            listenForDelayUpdates();
+            return;
+        }
+        showingApp = true;
+        setContentView(buildContent());
+        bindSignedInStatus(user);
+        bindStation(selectedStation);
+    }
+
+    private void bindAuthScreen() {
         if (authStatusText == null) {
             return;
         }
-
         boolean configured = auth != null;
-        boolean signedIn = configured && user != null;
         if (!configured) {
             authStatusText.setText("Firebase config is missing. Account sign-in is unavailable.");
-        } else if (signedIn) {
-            String display = user.isAnonymous() ? "Guest passenger" : user.getEmail();
-            authStatusText.setText("Signed in as " + display + ".");
         } else {
-            authStatusText.setText("Sign in or continue as guest to share updates across devices.");
+            authStatusText.setText("Use your account or continue as guest.");
         }
 
-        int signedOutVisibility = signedIn ? View.GONE : View.VISIBLE;
-        int signedInVisibility = signedIn ? View.VISIBLE : View.GONE;
-        emailLabel.setVisibility(signedOutVisibility);
-        passwordLabel.setVisibility(signedOutVisibility);
-        emailInput.setVisibility(signedOutVisibility);
-        passwordInput.setVisibility(signedOutVisibility);
-        signInButton.setVisibility(signedOutVisibility);
-        createAccountButton.setVisibility(signedOutVisibility);
-        guestButton.setVisibility(signedOutVisibility);
-        signOutButton.setVisibility(signedInVisibility);
+        emailInput.setEnabled(configured);
+        passwordInput.setEnabled(configured);
+        signInButton.setEnabled(configured);
+        createAccountButton.setEnabled(configured);
+        guestButton.setEnabled(configured);
+    }
 
-        boolean enabled = configured;
-        emailInput.setEnabled(enabled);
-        passwordInput.setEnabled(enabled);
-        signInButton.setEnabled(enabled);
-        createAccountButton.setEnabled(enabled);
-        guestButton.setEnabled(enabled);
-        listenForPlatformPings();
-        listenForDelayUpdates();
+    private void bindSignedInStatus(FirebaseUser user) {
+        if (authStatusText == null || user == null) {
+            return;
+        }
+        String display = user.isAnonymous() ? "Guest passenger" : user.getEmail();
+        authStatusText.setText("Signed in as " + display + ".");
+    }
+
+    private void clearLiveListeners() {
+        if (platformListener != null) {
+            platformListener.remove();
+            platformListener = null;
+        }
+        if (delayListener != null) {
+            delayListener.remove();
+            delayListener = null;
+        }
     }
 
     private boolean hasCredentials(String email, String password) {
